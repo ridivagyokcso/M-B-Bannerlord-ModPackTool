@@ -277,7 +277,19 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                                         versionValue = versionElement.Attribute("value")?.Value;
                                     }
 
-                                    launcherData.CreateAddUserModData(ModuleName, versionValue, true);
+                                    XElement idElement = doc.Root.Element("Id");
+                                    string idValue = null;
+                                    if (idElement != null)
+                                    {
+                                        idValue = idElement.Attribute("value")?.Value;
+                                    }
+
+
+                                    if (idValue != null)
+                                    {
+                                        launcherData.CreateAddUserModData(idValue, versionValue, true);
+                                    }
+                                    
                                 }
 
                                 if (Directory.Exists(extractPath))
@@ -310,6 +322,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                 XDocument mods = modData.GetModDataXml(config);
                 foreach (XElement Module in mods.Descendants("UserModData"))
                 {
+                    string modulesPath = Path.Combine(bannerlordPath, @"Modules");
                     string ModuleName = Module.Element("Name")?.Value;
                     string NexusModId = Module.Element("NexusModId")?.Value;
                     string NexusModFileId = Module.Element("NexusModFileId")?.Value;
@@ -321,24 +334,48 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                     bool CustomDownload = bool.Parse(Module.Element("CustomDownload")?.Value ?? "false");
                     string CustomDownloadUrl = Module.Element("CustomDownloadUrl")?.Value;
 
-                    string modulesPath = Path.Combine(bannerlordPath, @"Modules");
-                    string modulePath = Path.Combine(modulesPath, ModuleName);
-
-                    string submodulxml = Path.Combine(modulePath, @"SubModule.xml");
-                    XDocument doc = XDocument.Load(submodulxml);
-
-                    XElement versionElement = doc.Root.Element("Version");
-                    string versionValue = "v1.0.0";
-                    if (versionElement != null)
+                    bool cont = true;
+                    if (BLSE)
                     {
-                        versionValue = versionElement.Attribute("value")?.Value;
+                        cont = false;
                     }
 
-                    launcherData.CreateAddUserModData(ModuleName, versionValue, true);
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine($"{order}: {ModuleName}");
+                    if (ModAssets)
+                    {
+                        cont = false;
+                    }
 
-                    order++;
+                    if (cont) 
+                    {
+                        string modulePath = Path.Combine(modulesPath, ModuleName);
+                        string submodulxml = Path.Combine(modulePath, @"SubModule.xml");
+                        XDocument doc = XDocument.Load(submodulxml);
+
+                        XElement versionElement = doc.Root.Element("Version");
+                        string versionValue = "v1.0.0";
+                        if (versionElement != null)
+                        {
+                            versionValue = versionElement.Attribute("value")?.Value;
+                        }
+
+                        XElement idElement = doc.Root.Element("Id");
+                        string idValue = null;
+                        if (idElement != null)
+                        {
+                            idValue = idElement.Attribute("value")?.Value;
+                        }
+
+
+                        if (idValue != null)
+                        {
+                            launcherData.CreateAddUserModData(idValue, versionValue, true);
+                        }
+
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine($"{order}: {ModuleName}");
+
+                        order++;
+                    }
                 }
 
                 launcherData.CreateLauncherXmlFile();
