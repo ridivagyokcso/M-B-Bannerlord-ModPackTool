@@ -119,6 +119,7 @@
     <Compile Include="Functions\DeleteEvents.cs" />
     <Compile Include="Functions\MBEvents.cs" />
     <Compile Include="Functions\ModEvents.cs" />
+    <Compile Include="Functions\NexusUser.cs" />
     <Compile Include="Functions\SteamEvents.cs" />
     <Compile Include="ModPackTool.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

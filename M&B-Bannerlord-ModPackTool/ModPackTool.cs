@@ -30,6 +30,8 @@ namespace M_B_Bannerlord_ModPackTool
             }
             File.WriteAllText(logFilePath, string.Empty);
 
+            ModEvents modEvents = new ModEvents();
+
             using (var logFileStream = new FileStream(logFilePath, FileMode.Append, FileAccess.Write))
             using (var streamWriter = new StreamWriter(logFileStream))
             {
@@ -52,6 +54,8 @@ namespace M_B_Bannerlord_ModPackTool
                 }
 
 
+                await modEvents.APIValidation(config, config.NexusModManagerApiKey);
+
 
                 if (SteamEvents.SteamInstalled(steamPath) || config.CustomInstallation)
                 {
@@ -70,6 +74,16 @@ namespace M_B_Bannerlord_ModPackTool
                     {
                         while (true)
                         {
+                            Console.ForegroundColor = ConsoleColor.Gray;
+                            Console.WriteLine($"Nexus API Status: {modEvents.getNexusApiStatus()}");
+                            Console.WriteLine($"Nexus API User: {modEvents.getNexusApiUser()}");
+                            Console.WriteLine($"Nexus API Premium: {modEvents.getNexusApiPremium()}");
+                            Console.WriteLine($"Nexus API Hourly Limit: {modEvents.getNexusApiHourlyLimit()}");
+                            Console.WriteLine($"Nexus API Hourly Free: {modEvents.getNexusApiHourlyFree()}");
+                            Console.WriteLine($"Nexus API Daily Limit: {modEvents.getNexusApiDailyLimit()}");
+                            Console.WriteLine($"Nexus API Daily Free: {modEvents.getNexusApiDailyFree()}");
+                            Console.ForegroundColor = ConsoleColor.Yellow;
+                            Console.WriteLine("--------------------------------------------------------");
                             Console.ForegroundColor = ConsoleColor.Gray;
                             Console.WriteLine("Please choose an option:");
                             Console.WriteLine("1. Checking the integrity of game files");
@@ -102,10 +116,10 @@ namespace M_B_Bannerlord_ModPackTool
                                     RemoveGameMods(bannerlordPath);
                                     break;
                                 case "5":
-                                    await InstallGameMods(config, bannerlordPath);
+                                    await InstallGameMods(config, bannerlordPath, config.NexusModManagerApiKey, modEvents);
                                     break;
                                 case "6":
-                                    ModOrderGenerate(config, modpackFile, bannerlordPath);
+                                    ModOrderGenerate(config, modpackFile, bannerlordPath, modEvents);
                                     break;
 #if !DEBUG
                             case "7":
@@ -233,33 +247,79 @@ namespace M_B_Bannerlord_ModPackTool
             Console.WriteLine("----------------------------------------------------------------------------------------");
         }
 
-        private static async Task InstallGameMods(Config config, string bannerlordPath)
+        private static async Task InstallGameMods(Config config, string bannerlordPath, string apiKey, ModEvents modEvents)
         {
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("----------------------------------------------------------------------------------------");
-            Console.WriteLine("Starting the download and installation of mods.");
-            Console.WriteLine("----------------------------------------------------------------------------------------");
-
-            bool installstatus = await ModEvents.InstallingMods(config, bannerlordPath);
-
-            if (installstatus)
+            if(await modEvents.APIValidation(config, apiKey))
             {
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("----------------------------------------------------------------------------------------");
-                Console.WriteLine("The modpack has been successfully installed.");
-                Console.WriteLine("----------------------------------------------------------------------------------------");
+                string premium = modEvents.getNexusApiPremium();
+                if (premium == "YES")
+                {
+                    int modcount = modEvents.GetNexusModCount(config, bannerlordPath);
+                    int dailyfree = modEvents.getNexusApiDailyFree();
+                    int dailylimit = modEvents.getNexusApiDailyLimit();
+                    int hourlyfree = modEvents.getNexusApiHourlyFree();
+                    int hourlylimit = modEvents.getNexusApiHourlyLimit();
+
+                    if (modcount > hourlyfree)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("----------------------------------------------------------------------------------------");
+                        Console.WriteLine($"Installation not possible: Nexus API rate limit (Hourly) is {hourlylimit}, and you only have {hourlyfree} requests remaining. Number of requests needed for the current modpack: {modcount}");
+                        Console.WriteLine("----------------------------------------------------------------------------------------");
+                        return;
+                    }
+
+                    if (modcount > dailyfree)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("----------------------------------------------------------------------------------------");
+                        Console.WriteLine($"Installation not possible: Nexus API rate limit (Daily) is {dailylimit}, and you only have {dailyfree} requests remaining. Number of requests needed for the current modpack: {modcount}");
+                        Console.WriteLine("----------------------------------------------------------------------------------------");
+                        return;
+                    }
+
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+                    Console.WriteLine("----------------------------------------------------------------------------------------");
+                    Console.WriteLine("Starting the download and installation of mods.");
+                    Console.WriteLine("----------------------------------------------------------------------------------------");
+
+
+                    bool installstatus = await modEvents.InstallingMods(config, bannerlordPath);
+
+                    if (installstatus)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine("----------------------------------------------------------------------------------------");
+                        Console.WriteLine("The modpack has been successfully installed.");
+                        Console.WriteLine("----------------------------------------------------------------------------------------");
+                    }
+                    else
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("----------------------------------------------------------------------------------------");
+                        Console.WriteLine("The modpack installation failed.");
+                        Console.WriteLine("----------------------------------------------------------------------------------------");
+                    }
+                }
+                else
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("----------------------------------------------------------------------------------------");
+                    Console.WriteLine($"Installation not possible: A premium user is required to query download links.");
+                    Console.WriteLine("----------------------------------------------------------------------------------------");
+                    return;
+                }
             }
             else
             {
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("----------------------------------------------------------------------------------------");
-                Console.WriteLine("The modpack installation failed.");
+                Console.WriteLine("Connection to the Nexus API was unsuccessful, so mod installation is not possible.");
                 Console.WriteLine("----------------------------------------------------------------------------------------");
             }
-            
         }
 
-        private static void ModOrderGenerate(Config config, string modpackFile, string bannerlordPath)
+        private static void ModOrderGenerate(Config config, string modpackFile, string bannerlordPath, ModEvents modEvents)
         {
             if (File.Exists(modpackFile))
             {
@@ -269,7 +329,7 @@ namespace M_B_Bannerlord_ModPackTool
                 Console.WriteLine("Regenerating the mod load order in the game launcher.");
                 Console.WriteLine("----------------------------------------------------------------------------------------");
 
-                ModEvents.ModOrderGenerate(config, bannerlordPath);
+                modEvents.ModOrderGenerate(config, bannerlordPath);
 
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine("----------------------------------------------------------------------------------------");

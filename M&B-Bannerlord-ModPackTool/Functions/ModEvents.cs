@@ -13,12 +13,65 @@ using System.Net.Http;
 using SharpCompress.Archives.Rar;
 using SharpCompress.Common;
 using SharpCompress.Archives;
+using System.Security.Cryptography;
+using System.Linq;
 
 namespace M_B_Bannerlord_ModPackTool.Functions
 {
     internal class ModEvents
     {
-        public static async Task<bool> InstallingMods(Config config, string bannerlordPath)
+
+        private string NexusApiStatus = "INVALID";
+        private string NexusApiUser = "INVALID";
+        private bool NexusApiPremium = false;
+        private int NexusApiHourlyLimit = 0;
+        private int NexusApiHourlyFree = 0;
+        private int NexusApiDailyLimit = 0;
+        private int NexusApiDailyFree = 0;
+
+        public int GetNexusModCount(Config config, string bannerlordPath)
+        {
+            string modFile = config.ModPackXmlFile;
+            if (System.IO.File.Exists(modFile))
+            {
+                ModData modData = new ModData();
+                if (modData.ValidateModData(config))
+                {
+                    int modcount = 0;
+                    XDocument mods = modData.GetModDataXml(config);
+                    foreach (XElement Module in mods.Descendants("UserModData"))
+                    {
+                        bool BaseModule = bool.Parse(Module.Element("BaseModule")?.Value ?? "false");
+                        bool CustomDownload = bool.Parse(Module.Element("CustomDownload")?.Value ?? "false");
+
+                        if (!BaseModule)
+                        {
+                            if (!CustomDownload)
+                            {
+                                modcount++;
+                            }
+                        }
+
+                    }
+                    return modcount;
+                }
+                else
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("ModPack XML file validation failed.");
+                    return 0;
+                }
+            }
+            else
+            {
+                ModData modData = new ModData();
+                modData.CreateModDataXml();
+                modData.CreateModDataXmlFile(config);
+                return 0;
+            }
+        }
+
+        public async Task<bool> InstallingMods(Config config, string bannerlordPath)
         {
             string modFile = config.ModPackXmlFile;
             if (!System.IO.File.Exists(modFile)) {
@@ -246,7 +299,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                                 {
                                     if (DataDir == "-")
                                     {
-                                        MoveDirectoryContents(extractPath, bannerlordPath);
+                                        MoveDirectoryContents(extractPath, bannerlordPath, true, false);
                                         Console.ForegroundColor = ConsoleColor.Green;
                                         Console.WriteLine($"Successfully installed into the game: {ModuleName}");
                                         Console.WriteLine("");
@@ -255,7 +308,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                                     else
                                     {
                                         string path = Path.Combine(extractPath, DataDir);
-                                        MoveDirectoryContents(path, bannerlordPath);
+                                        MoveDirectoryContents(path, bannerlordPath, true, false);
                                         Console.ForegroundColor = ConsoleColor.Green;
                                         Console.WriteLine($"Successfully installed into the game: {ModuleName}");
                                         Console.WriteLine("");
@@ -278,7 +331,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                                     string modulePath = Path.Combine(modulesPath, ModAssetsModule);
                                     if (DataDir == "-")
                                     {
-                                        MoveDirectoryContents(extractPath, modulePath);
+                                        MoveDirectoryContents(extractPath, modulePath, false, true);
                                         Console.ForegroundColor = ConsoleColor.Green;
                                         Console.WriteLine($"Successfully installed into the game: {ModuleName}");
                                         Console.WriteLine("");
@@ -286,7 +339,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                                     else
                                     {
                                         string path = Path.Combine(extractPath, DataDir);
-                                        MoveDirectoryContents(path, modulePath);
+                                        MoveDirectoryContents(path, modulePath, false, true);
                                         Console.ForegroundColor = ConsoleColor.Green;
                                         Console.WriteLine($"Successfully installed into the game: {ModuleName}");
                                         Console.WriteLine("");
@@ -298,7 +351,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                                     string modulePath = Path.Combine(modulesPath, ModuleName);
                                     if (DataDir == "-")
                                     {
-                                        MoveDirectoryContents(extractPath, modulePath);
+                                        MoveDirectoryContents(extractPath, modulePath, false, false);
                                         Console.ForegroundColor = ConsoleColor.Green;
                                         Console.WriteLine($"Successfully installed into the game: {ModuleName}");
                                         Console.WriteLine("");
@@ -306,7 +359,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                                     else
                                     {
                                         string path = Path.Combine(extractPath, DataDir);
-                                        MoveDirectoryContents(path, modulePath);
+                                        MoveDirectoryContents(path, modulePath, false, false);
                                         Console.ForegroundColor = ConsoleColor.Green;
                                         Console.WriteLine($"Successfully installed into the game: {ModuleName}");
                                         Console.WriteLine("");
@@ -354,7 +407,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
             }
         }
 
-        public static void ModOrderGenerate(Config config, string bannerlordPath)
+        public void ModOrderGenerate(Config config, string bannerlordPath)
         {
             ModData modData = new ModData();
             if (modData.ValidateModData(config))
@@ -428,7 +481,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
             }
         }
 
-        private static async Task<string[]> GetDownloadLinksFromApi(string modId, string modFileId, string apiKey)
+        private async Task<string[]> GetDownloadLinksFromApi(string modId, string modFileId, string apiKey)
         {
             string url = $"https://api.nexusmods.com/v1/games/mountandblade2bannerlord/mods/{modId}/files/{modFileId}/download_link.json";
 
@@ -484,7 +537,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                 }
             }
         }
-        private static async Task DownloadFileAsync(string url, string outputPath)
+        private async Task DownloadFileAsync(string url, string outputPath)
         {
             using (HttpClient client = new HttpClient())
             {
@@ -517,7 +570,77 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                 }
             }
         }
-        private static (string fileName, string fileExtension) GetFileNameAndExtension(string url)
+
+        public async Task<bool> APIValidation(Config config, string apiKey)
+        {
+            string url = $"https://api.nexusmods.com/v1/users/validate.json";
+
+            using (HttpClient client = new HttpClient())
+            {
+                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                client.DefaultRequestHeaders.Add("apikey", apiKey);
+
+                try
+                {
+                    HttpResponseMessage response = await client.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+
+                    foreach (var header in response.Headers)
+                    {
+                        if (header.Key == "x-rl-hourly-limit")
+                        {
+                            NexusApiHourlyLimit = int.Parse(header.Value.First());
+                        }
+                        if (header.Key == "x-rl-hourly-remaining")
+                        {
+                            NexusApiHourlyFree = int.Parse(header.Value.First());
+                        }
+                        if (header.Key == "x-rl-daily-limit")
+                        {
+                            NexusApiDailyLimit = int.Parse(header.Value.First());
+                        }
+                        if (header.Key == "x-rl-daily-remaining")
+                        {
+                            NexusApiDailyFree = int.Parse(header.Value.First());
+                        }
+
+                        NexusApiStatus = "OK";
+                    }
+
+
+                    string responseBody = await response.Content.ReadAsStringAsync();
+                    NexusUser userResponse = JsonSerializer.Deserialize<NexusUser>(responseBody);
+
+                    if (userResponse != null)
+                    {
+                        NexusApiUser = userResponse.Name;
+                        NexusApiPremium = userResponse.IsPremium;
+                    }
+
+                    return true;
+                }
+                catch (HttpRequestException e)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"Nexus API error: HTTP request error: {e.Message}");
+                    return false;
+                }
+                catch (JsonException e)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"Nexus API error: JSON processing error: {e.Message}");
+                    return false;
+                }
+                catch (Exception e)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"Nexus API error: General error: {e.Message}");
+                    return false;
+                }
+            }
+        }
+
+        private (string fileName, string fileExtension) GetFileNameAndExtension(string url)
         {
             // URL bontása
             Uri uri = new Uri(url);
@@ -531,7 +654,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
         }
 
 
-        private static bool IsZipFile(string filePath)
+        private bool IsZipFile(string filePath)
         {
             byte[] buffer = new byte[4];
             using (FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
@@ -541,7 +664,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
             return buffer[0] == 0x50 && buffer[1] == 0x4B && buffer[2] == 0x03 && buffer[3] == 0x04;
         }
 
-        private static bool IsGZipFile(string filePath)
+        private bool IsGZipFile(string filePath)
         {
             byte[] buffer = new byte[2];
             using (FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
@@ -551,7 +674,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
             return buffer[0] == 0x1F && buffer[1] == 0x8B;
         }
 
-        private static bool IsTarFile(string filePath)
+        private bool IsTarFile(string filePath)
         {
             byte[] buffer = new byte[5];
             using (FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
@@ -561,7 +684,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
             return buffer[0] == 0x75 && buffer[1] == 0x73 && buffer[2] == 0x74 && buffer[3] == 0x61 && buffer[4] == 0x72;
         }
 
-        private static bool IsRarFile(string filePath)
+        private bool IsRarFile(string filePath)
         {
             byte[] buffer = new byte[4];
             using (FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
@@ -571,7 +694,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
             return buffer[0] == 0x52 && buffer[1] == 0x61 && buffer[2] == 0x72 && buffer[3] == 0x21;
         }
 
-        private static bool Is7zFile(string filePath)
+        private bool Is7zFile(string filePath)
         {
             byte[] buffer = new byte[6];
             using (FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
@@ -581,7 +704,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
             return buffer[0] == 0x37 && buffer[1] == 0x7A && buffer[2] == 0xBC && buffer[3] == 0xAF && buffer[4] == 0x27 && buffer[5] == 0x1C;
         }
 
-        private static void MoveDirectoryContents(string sourceDir, string destDir)
+        private void MoveDirectoryContents(string sourceDir, string destDir, bool blse, bool assetpack)
         {
             if (!Directory.Exists(sourceDir))
             {
@@ -592,11 +715,26 @@ namespace M_B_Bannerlord_ModPackTool.Functions
             {
                 Directory.CreateDirectory(destDir);
             }
+            else
+            {
+                if (!blse)
+                {
+                    if (!assetpack)
+                    {
+                        Directory.Delete(destDir, true);
+                        Directory.CreateDirectory(destDir);
+                    }
+                }                
+            }
 
             foreach (string filePath in Directory.GetFiles(sourceDir))
             {
                 string fileName = Path.GetFileName(filePath);
                 string destFilePath = Path.Combine(destDir, fileName);
+                if (System.IO.File.Exists(destFilePath))
+                {
+                    System.IO.File.Delete(destFilePath);
+                }
                 System.IO.File.Move(filePath, destFilePath);
             }
 
@@ -604,12 +742,53 @@ namespace M_B_Bannerlord_ModPackTool.Functions
             {
                 string dirName = Path.GetFileName(dirPath);
                 string destDirPath = Path.Combine(destDir, dirName);
-                MoveDirectoryContents(dirPath, destDirPath);
+                MoveDirectoryContents(dirPath, destDirPath, blse, assetpack);
             }
             Directory.Delete(sourceDir);
         }
 
-        private static void CreateShortcut(string exePath, string shortcutPath, string shortcutName)
+        public string getNexusApiStatus()
+        {
+            return NexusApiStatus;
+        }
+
+        public string getNexusApiUser()
+        {
+            return NexusApiUser;
+        }
+
+        public string getNexusApiPremium()
+        {
+            if (NexusApiPremium)
+            {
+                return "YES";
+            }
+            else
+            {
+                return "NO";
+            }
+        }
+
+        public int getNexusApiHourlyLimit()
+        {
+            return NexusApiHourlyLimit;
+        }
+
+        public int getNexusApiHourlyFree()
+        {
+            return NexusApiHourlyFree;
+        }
+
+        public int getNexusApiDailyLimit()
+        {
+            return NexusApiDailyLimit;
+        }
+
+        public int getNexusApiDailyFree() { 
+            return NexusApiDailyFree;
+        }
+
+        private void CreateShortcut(string exePath, string shortcutPath, string shortcutName)
         {
             var shell = new WshShell();
             var shortcut = (IWshShortcut)shell.CreateShortcut(shortcutPath);
