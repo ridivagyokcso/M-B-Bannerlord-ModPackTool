@@ -309,6 +309,7 @@ namespace M_B_Bannerlord_ModPackTool
                     Console.WriteLine("----------------------------------------------------------------------------------------");
                     return;
                 }
+                await modEvents.APIValidation(config, apiKey);
             }
             else
             {
