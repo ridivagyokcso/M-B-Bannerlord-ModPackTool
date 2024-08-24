@@ -5,13 +5,14 @@ using System.Xml.Linq;
 using IWshRuntimeLibrary;
 using SevenZip;
 using System.Reflection;
-using Aspose.Zip.Rar;
-using Aspose.Zip;
 using System.Threading.Tasks;
 using System.IO;
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using SharpCompress.Archives.Rar;
+using SharpCompress.Common;
+using SharpCompress.Archives;
 
 namespace M_B_Bannerlord_ModPackTool.Functions
 {
@@ -76,6 +77,7 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                             {
                                 Console.ForegroundColor = ConsoleColor.Green;
                                 Console.WriteLine($"The {ModuleName} is located in the modules folder.");
+                                Console.WriteLine("");
                             }
                             else
                             {
@@ -180,25 +182,62 @@ namespace M_B_Bannerlord_ModPackTool.Functions
 
                                 if (IsRarFile(filePath))
                                 {
-                                    using (RarArchive archive = new RarArchive(filePath))
-{
-                                        archive.ExtractToDirectory(extractPath);
+                                    using (var archive = RarArchive.Open(System.IO.File.OpenRead(filePath)))
+                                    {
+                                        // Get all entries in the archive
+                                        var entries = archive.Entries;
+                                        int totalEntries = 0;
+                                        int extractedEntries = 0;
+
+                                        // Count the total number of non-directory entries
+                                        foreach (var entry in entries)
+                                        {
+                                            if (!entry.IsDirectory)
+                                            {
+                                                totalEntries++;
+                                            }
+                                        }
+
+                                        // Extract each entry
+                                        foreach (var entry in entries)
+                                        {
+                                            if (!entry.IsDirectory)
+                                            {
+                                                string outputPath = Path.Combine(extractPath, entry.Key);
+
+                                                // Create the directory if it doesn't exist
+                                                Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
+
+                                                // Extract the entry to the output path
+                                                entry.WriteToDirectory(extractPath, new ExtractionOptions
+                                                {
+                                                    ExtractFullPath = true,
+                                                    Overwrite = true
+                                                });
+
+                                                // Update and display the progress
+                                                extractedEntries++;
+                                                Console.ForegroundColor = ConsoleColor.DarkYellow;
+                                                Console.WriteLine($"Progress: {extractedEntries}/{totalEntries} files extracted.");
+                                            }
+                                        }
                                     }
                                 }
                                 else if (IsZipFile(filePath))
                                 {
-                                    using (FileStream zipFile = System.IO.File.Open(filePath, FileMode.Open))
+                                    using (var extractor = new SevenZipExtractor(filePath))
                                     {
-                                        using (var archive = new Archive(zipFile))
-                                        {
-                                            archive.ExtractToDirectory(extractPath);
-                                        }
+                                        Console.ForegroundColor = ConsoleColor.DarkYellow;
+                                        Console.WriteLine($"Extraction in progress: {fileName}");
+                                        extractor.ExtractArchive(extractPath);
                                     }
                                 }
                                 else
                                 {
                                     using (var extractor = new SevenZipExtractor(filePath))
                                     {
+                                        Console.ForegroundColor = ConsoleColor.DarkYellow;
+                                        Console.WriteLine($"Extraction in progress: {fileName}");
                                         extractor.ExtractArchive(extractPath);
                                     }
                                 }
@@ -209,7 +248,8 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                                     {
                                         MoveDirectoryContents(extractPath, bannerlordPath);
                                         Console.ForegroundColor = ConsoleColor.Green;
-                                        Console.WriteLine($"Successfully installed into the game: {fileName}");
+                                        Console.WriteLine($"Successfully installed into the game: {ModuleName}");
+                                        Console.WriteLine("");
 
                                     }
                                     else
@@ -217,7 +257,8 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                                         string path = Path.Combine(extractPath, DataDir);
                                         MoveDirectoryContents(path, bannerlordPath);
                                         Console.ForegroundColor = ConsoleColor.Green;
-                                        Console.WriteLine($"Successfully installed into the game: {fileName}");
+                                        Console.WriteLine($"Successfully installed into the game: {ModuleName}");
+                                        Console.WriteLine("");
                                     }
 
 
@@ -239,14 +280,16 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                                     {
                                         MoveDirectoryContents(extractPath, modulePath);
                                         Console.ForegroundColor = ConsoleColor.Green;
-                                        Console.WriteLine($"Successfully installed into the game: {fileName}");
+                                        Console.WriteLine($"Successfully installed into the game: {ModuleName}");
+                                        Console.WriteLine("");
                                     }
                                     else
                                     {
                                         string path = Path.Combine(extractPath, DataDir);
                                         MoveDirectoryContents(path, modulePath);
                                         Console.ForegroundColor = ConsoleColor.Green;
-                                        Console.WriteLine($"Successfully installed into the game: {fileName}");
+                                        Console.WriteLine($"Successfully installed into the game: {ModuleName}");
+                                        Console.WriteLine("");
                                     }
                                 }
                                 else
@@ -257,14 +300,16 @@ namespace M_B_Bannerlord_ModPackTool.Functions
                                     {
                                         MoveDirectoryContents(extractPath, modulePath);
                                         Console.ForegroundColor = ConsoleColor.Green;
-                                        Console.WriteLine($"Successfully installed into the game: {fileName}");
+                                        Console.WriteLine($"Successfully installed into the game: {ModuleName}");
+                                        Console.WriteLine("");
                                     }
                                     else
                                     {
                                         string path = Path.Combine(extractPath, DataDir);
                                         MoveDirectoryContents(path, modulePath);
                                         Console.ForegroundColor = ConsoleColor.Green;
-                                        Console.WriteLine($"Successfully installed into the game: {fileName}");
+                                        Console.WriteLine($"Successfully installed into the game: {ModuleName}");
+                                        Console.WriteLine("");
                                     }
 
                                     string submodulxml = Path.Combine(modulePath, @"SubModule.xml");
@@ -443,15 +488,32 @@ namespace M_B_Bannerlord_ModPackTool.Functions
         {
             using (HttpClient client = new HttpClient())
             {
+                // HttpClient beállítása
                 HttpResponseMessage response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
                 response.EnsureSuccessStatusCode();
 
                 using (Stream responseStream = await response.Content.ReadAsStreamAsync())
+                using (FileStream fileStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write))
                 {
-                    using (FileStream fileStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write))
+                    var buffer = new byte[8192];
+                    int bytesRead;
+                    long totalBytesRead = 0;
+                    long contentLength = response.Content.Headers.ContentLength ?? -1;
+
+                    Console.ForegroundColor = ConsoleColor.DarkYellow;
+                    Console.WriteLine("Downloading...");
+                    while ((bytesRead = await responseStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
                     {
-                        await responseStream.CopyToAsync(fileStream);
+                        await fileStream.WriteAsync(buffer, 0, bytesRead);
+                        totalBytesRead += bytesRead;
+
+                        if (contentLength > 0)
+                        {
+                            double progress = (double)totalBytesRead / contentLength * 100;
+                            Console.Write($"\rProgress: {progress:F2}% ({totalBytesRead} bytes of {contentLength} bytes)");
+                        }
                     }
+                    Console.WriteLine("\nDownload completed.");
                 }
             }
         }

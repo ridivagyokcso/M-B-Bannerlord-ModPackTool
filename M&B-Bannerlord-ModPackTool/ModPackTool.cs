@@ -5,6 +5,7 @@ using System.IO;
 using System.Security.Principal;
 using System.Threading.Tasks;
 using System;
+using System.Text;
 
 namespace M_B_Bannerlord_ModPackTool
 {
@@ -12,8 +13,7 @@ namespace M_B_Bannerlord_ModPackTool
     {
         private static async Task Main(string[] args)
         {
-
-#if !DEBUG 
+#if !DEBUG
             if (!IsAdministrator())
             {
                 Console.ForegroundColor = ConsoleColor.Red;
@@ -22,108 +22,124 @@ namespace M_B_Bannerlord_ModPackTool
                 return;
             }
 #endif
-            ConfigEvents.CheckConfig();
-            Config config = ConfigEvents.LoadConfig();
-            string hashfile = config.HashFile;
-            string modpackFile = config.ModPackXmlFile;
 
-
-            string steamKey = null;
-            string steamPath = null;
-            if (!config.CustomInstallation)
+            string logFilePath = "log.txt";
+            if (File.Exists(logFilePath))
             {
-                steamKey = @"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Valve\Steam";
-                steamPath = (string)Registry.GetValue(steamKey, "InstallPath", null);
+                File.Delete(logFilePath);
             }
+            File.WriteAllText(logFilePath, string.Empty);
 
-
-
-            if (SteamEvents.SteamInstalled(steamPath) || config.CustomInstallation)
+            using (var logFileStream = new FileStream(logFilePath, FileMode.Append, FileAccess.Write))
+            using (var streamWriter = new StreamWriter(logFileStream))
             {
-                string bannerlordPath = null;
-                if (config.CustomInstallation)
+
+                var dualWriter = new DualWriter(Console.Out, streamWriter);
+                Console.SetOut(dualWriter);
+
+                ConfigEvents.CheckConfig();
+                Config config = ConfigEvents.LoadConfig();
+                string hashfile = config.HashFile;
+                string modpackFile = config.ModPackXmlFile;
+
+
+                string steamKey = null;
+                string steamPath = null;
+                if (!config.CustomInstallation)
                 {
-                    bannerlordPath = config.CustomInstallationPath;
-                }
-                else
-                {
-                    bannerlordPath = Path.Combine(steamPath, @"steamapps\common\Mount & Blade II Bannerlord");
+                    steamKey = @"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Valve\Steam";
+                    steamPath = (string)Registry.GetValue(steamKey, "InstallPath", null);
                 }
 
 
-                if (MBEvents.MBInstalled(bannerlordPath))
+
+                if (SteamEvents.SteamInstalled(steamPath) || config.CustomInstallation)
                 {
-                    while (true)
+                    string bannerlordPath = null;
+                    if (config.CustomInstallation)
                     {
-                        Console.ForegroundColor = ConsoleColor.Gray;
-                        Console.WriteLine("Please choose an option:");
-                        Console.WriteLine("1. Checking the integrity of game files");
-                        Console.WriteLine("2. Complete cleanup of the game directory");
-                        Console.WriteLine("3. Deleting the game directory found in Documents");
-                        Console.WriteLine("4. Removing all mods from the game");
-                        Console.WriteLine("5. Installing mods found in the modpack");
-                        Console.WriteLine("6. Regenerating the mod load order in the game launcher.");
+                        bannerlordPath = config.CustomInstallationPath;
+                    }
+                    else
+                    {
+                        bannerlordPath = Path.Combine(steamPath, @"steamapps\common\Mount & Blade II Bannerlord");
+                    }
+
+
+                    if (MBEvents.MBInstalled(bannerlordPath))
+                    {
+                        while (true)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Gray;
+                            Console.WriteLine("Please choose an option:");
+                            Console.WriteLine("1. Checking the integrity of game files");
+                            Console.WriteLine("2. Complete cleanup of the game directory");
+                            Console.WriteLine("3. Deleting the game directory found in Documents");
+                            Console.WriteLine("4. Removing all mods from the game");
+                            Console.WriteLine("5. Installing mods found in the modpack");
+                            Console.WriteLine("6. Regenerating the mod load order in the game launcher.");
 #if !DEBUG
                         Console.WriteLine("7. Unblock DLL files");
 #endif
 
-                        Console.WriteLine("8. Exit");
+                            Console.WriteLine("8. Exit");
 
-                        Console.Write("Choice: ");
-                        string input = Console.ReadLine();
+                            Console.Write("Choice: ");
+                            string input = Console.ReadLine();
 
-                        switch (input)
-                        {
-                            case "1":
-                                CheckGamefilesIntegrity(hashfile, bannerlordPath, config);
-                                break;
-                            case "2":
-                                GameFolderCleanup(hashfile, bannerlordPath);
-                                break;
-                            case "3":
-                                RemoveDocumentDir();
-                                break;
-                            case "4":
-                                RemoveGameMods(bannerlordPath);
-                                break;
-                            case "5":
-                                await InstallGameMods(config, bannerlordPath);
-                                break;
-                            case "6":
-                                ModOrderGenerate(config, modpackFile, bannerlordPath);
-                                break;
+                            switch (input)
+                            {
+                                case "1":
+                                    CheckGamefilesIntegrity(hashfile, bannerlordPath, config);
+                                    break;
+                                case "2":
+                                    GameFolderCleanup(hashfile, bannerlordPath);
+                                    break;
+                                case "3":
+                                    RemoveDocumentDir();
+                                    break;
+                                case "4":
+                                    RemoveGameMods(bannerlordPath);
+                                    break;
+                                case "5":
+                                    await InstallGameMods(config, bannerlordPath);
+                                    break;
+                                case "6":
+                                    ModOrderGenerate(config, modpackFile, bannerlordPath);
+                                    break;
 #if !DEBUG
                             case "7":
                                 UnblockDllFiles(bannerlordPath);
                                 break;
 #endif
-                            case "8":
-                                return;
-                            default:
-                                Console.ForegroundColor = ConsoleColor.Red;
-                                Console.WriteLine("----------------------------------------------------------------------------------------");
-                                Console.WriteLine("Invalid choice. Please try again.");
-                                Console.WriteLine("----------------------------------------------------------------------------------------");
-                                break;
+                                case "8":
+                                    return;
+                                default:
+                                    Console.ForegroundColor = ConsoleColor.Red;
+                                    Console.WriteLine("----------------------------------------------------------------------------------------");
+                                    Console.WriteLine("Invalid choice. Please try again.");
+                                    Console.WriteLine("----------------------------------------------------------------------------------------");
+                                    break;
+                            }
                         }
+                    }
+                    else
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("----------------------------------------------------------------------------------------");
+                        Console.WriteLine("Mount & Blade: Bannerlord game installation directory not found! Press Enter key to exit!");
+                        Console.WriteLine("----------------------------------------------------------------------------------------");
+                        Console.ReadLine();
                     }
                 }
                 else
                 {
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine("----------------------------------------------------------------------------------------");
-                    Console.WriteLine("Mount & Blade: Bannerlord game installation directory not found! Press Enter key to exit!");
+                    Console.WriteLine("Steam installation directory not found! Press Enter key to exit!");
                     Console.WriteLine("----------------------------------------------------------------------------------------");
                     Console.ReadLine();
                 }
-            }
-            else
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("----------------------------------------------------------------------------------------");
-                Console.WriteLine("Steam installation directory not found! Press Enter key to exit!");
-                Console.WriteLine("----------------------------------------------------------------------------------------");
-                Console.ReadLine();
             }
         }
 
@@ -289,6 +305,44 @@ namespace M_B_Bannerlord_ModPackTool
             var identity = WindowsIdentity.GetCurrent();
             var principal = new WindowsPrincipal(identity);
             return principal.IsInRole(WindowsBuiltInRole.Administrator);
+        }
+
+        private class DualWriter : TextWriter
+        {
+            private readonly TextWriter _consoleWriter;
+            private readonly TextWriter _fileWriter;
+
+            public DualWriter(TextWriter consoleWriter, TextWriter fileWriter)
+            {
+                _consoleWriter = consoleWriter;
+                _fileWriter = fileWriter;
+            }
+
+            public override Encoding Encoding => _consoleWriter.Encoding;
+
+            public override void Write(char value)
+            {
+                _consoleWriter.Write(value);
+                _fileWriter.Write(value);
+            }
+
+            public override void Write(string value)
+            {
+                _consoleWriter.Write(value);
+                _fileWriter.Write(value);
+            }
+
+            public override void WriteLine(string value)
+            {
+                _consoleWriter.WriteLine(value);
+                _fileWriter.WriteLine(value);
+            }
+
+            public override void WriteLine()
+            {
+                _consoleWriter.WriteLine();
+                _fileWriter.WriteLine();
+            }
         }
     }
 }
